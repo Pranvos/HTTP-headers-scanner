@@ -22,11 +22,15 @@ Status = Literal["ok", "weak", "missing"]
 
 @dataclass(frozen=True, slots=True)
 class HeaderRule:
-    header: str
-    severity: Severity
-    description: str
-    recommendation: str
-    must_match: str | None = None
+    """Evaluation rules and remediation details for an HTTP header."""
+
+    header: str  # Target HTTP response header name.
+    severity: Severity  # Impact level: "low", "medium", or "high".
+    description: str  # Purpose of the security header.
+    recommendation: str  # Fix instructions if invalid or missing.
+    guide_url: str | None = None  # Optional documentation link.
+    must_match: str | None = None  # Optional regex for value validation.
+
 
 
 RULES: list[HeaderRule] = [
@@ -35,21 +39,31 @@ RULES: list[HeaderRule] = [
         severity="high",
         description="Enforces HTTPS connections",
         recommendation="Add STS with a positive max-age",
+        guide_url="https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Strict-Transport-Security",
         must_match=r"max-age\s*=\s*[1-9]",
     ),
     HeaderRule(
         header="Content-Security-Policy",
         severity="high",
-        description="Restricts sources of executable content",
+        description="Restricts sources that are executable(e.g. cross site scripting and malicous script injections)",
         recommendation="Define a strict Content-Security-Policy",
+        guide_url="https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Security-Policy",
     ),
     HeaderRule(
-        header="Permissions Policy",
-        severity="high",
+        header="Permissions-Policy",
+        severity="medium",
         description="Restricts access to browser permissions(e.g. camera, microphone, and geolocation permissions)",
-        recommendation="Define a Permissions-Policy header to restrict browser features (e.g., camera=(), microphone=(), geolocation=())"
+        recommendation="Define a Permissions-Policy header to restrict browser features (e.g., camera=(), microphone=(), geolocation=())",
+        guide_url="https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Permissions-Policy",
     ),
-# work on this
+    HeaderRule(
+        header="Cross-Origin-Opener-Policy",
+        severity="low",
+        description="Isolates the top-level browsing context to protect against cross-origin attacks",
+        recommendation="Set Cross-Origin-Opener-Policy to 'same origin'",
+        guide_url="https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Cross-Origin-Opener-Policy",
+        must_match=r"same-origin",
+    ),
 ]
 
 SEVERITY_POINTS: dict[Severity, int] = {
@@ -192,12 +206,19 @@ GRADE_COLORS: dict[str, str] = {
 
 
 def render_report(report: ScanReport, console: Console) -> None:
-    table = Table(title="HTTP-Headers Scanner", box=box.ROUNDED)
-    table.add_column("Header", style="bold black")
-    table.add_column("Severity", style="")
-    table.add_column("Status", style="bold")
-    table.add_column("Finding Note", style="dim underline")
-    table.add_column("Recommendation", style="dim", min_width=50)
+    table = Table(
+    title="HTTP-Headers Scanner",
+    box=box.ROUNDED,
+    show_lines=True,  # Draws horizontal lines between each row
+    expand=True,      # Resizes the table dynamically to fit the terminal width
+)
+
+    # Defined columns with targeted styles and flexible wrapping
+    table.add_column("Header", style="bold cyan", no_wrap=True)
+    table.add_column("Severity", justify="center")
+    table.add_column("Status", justify="center", style="bold")
+    table.add_column("Finding Note", style="italic bright_black", ratio=1)
+    table.add_column("Recommendation", style="white", ratio=2)
 
     for finding in report.findings:
         # Maps status to display colors
@@ -250,14 +271,15 @@ def render_report(report: ScanReport, console: Console) -> None:
     )
     console.print(panel)
 
-    #Print actionable recommendations list
+    # Print actionable recommendations list
     actionable = [x for x in report.findings if x.status != "ok"]
     if actionable:
         console.print("\n[bold]Recommendations:[/bold]")
         for finding in actionable:
-            console.print(
-                f"[bold]{finding.rule.header}:[/bold] {finding.rule.recommendation}"
-            )
+            rec_text = f"[bold]{finding.rule.header}:[/bold] {finding.rule.recommendation}"
+            if finding.rule.guide_url:
+                rec_text += f" ([link={finding.rule.guide_url}]Guide[/link])"
+            console.print(rec_text)
 
 def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -302,7 +324,5 @@ def main() -> int:
 
 #ensures main() executes only when script is run directly from the terminal
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main()) 
 
-
-    
