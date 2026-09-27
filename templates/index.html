@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTTP Header Scanner</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+
+<div class="container">
+    <h1>HTTP Header Scanner</h1>
+
+    <h2>How it works</h2>
+
+    <div class="accordion active">
+        <div class="accordion-header" onclick="toggleAccordion(this)">
+            <h3>Analysis Example (youtube.com)</h3>
+            <svg class="accordion-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+        </div>
+        <div class="accordion-content">
+            <div class="target-label">Target: youtube.com</div>
+
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-title">Grade</div>
+                    <div class="metric-value green">A</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-title">Score</div>
+                    <div class="metric-value green">100%</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-title">Status Code</div>
+                    <div class="metric-value">200</div>
+                </div>
+            </div>
+
+            <p class="impact-text">YouTube achieves an <strong>A Grade (100%)</strong> because it enforces strict configurations across every primary response header. This prevents cross-site scripting, clickjacking, and unauthorized resource loading on the domain.</p>
+
+            <div class="header-item">
+                <div class="header-top">
+                    <span class="header-name">Strict-Transport-Security</span>
+                    <span class="badge">OK</span>
+                </div>
+                <div>Forces HTTPS connection and prevents downgrade attacks.</div>
+                <div class="code-block">max-age=31536000</div>
+            </div>
+
+            <div class="header-item">
+                <div class="header-top">
+                    <span class="header-name">Content-Security-Policy</span>
+                    <span class="badge">OK</span>
+                </div>
+                <div>Limits executable sources to minimize injection risk.</div>
+                <div class="code-block">base-uri 'self'; object-src 'none'; script-src 'report-sample' 'nonce-...' 'unsafe-inline' 'strict-dynamic' https:</div>
+            </div>
+
+            <div class="header-item">
+                <div class="header-top">
+                    <span class="header-name">Permissions-Policy</span>
+                    <span class="badge">OK</span>
+                </div>
+                <div>Controls access to browser features such as camera, microphone, and geolocation.</div>
+                <div class="code-block">ch-ua-arch=*, ch-ua-bitness=*, ch-ua-full-version=*</div>
+            </div>
+
+            <div class="header-item">
+                <div class="header-top">
+                    <span class="header-name">Cross-Origin-Opener-Policy</span>
+                    <span class="badge">OK</span>
+                </div>
+                <div>Isolates top-level browsing contexts to mitigate cross-origin attacks.</div>
+                <div class="code-block">same-origin-allow-popups; report-to="youtube_main"</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="accordion">
+        <div class="accordion-header" onclick="toggleAccordion(this)">
+            <h3>Instructions</h3>
+            <svg class="accordion-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+        </div>
+        <div class="accordion-content">
+            <p>Enter any domain or full URL into the search bar below. The scanner retrieves server headers and evaluates them against current web security standards including CSP, HSTS, and Permissions-Policy.</p>
+        </div>
+    </div>
+
+    <div class="search-section">
+        <form id="scan-form" class="search-box">
+            <input id="url-input" type="text" class="oval-input" placeholder="Enter target URL (e.g. example.com)..." required>
+            <button type="submit" class="oval-btn">Run Scan</button>
+        </form>
+        <div id="scan-status" class="status-message" aria-live="polite"></div>
+        <div id="results" class="results-container" style="display: none;"></div>
+    </div>
+</div>
+
+<script>
+    function toggleAccordion(element) {
+        const parent = element.parentElement;
+        const content = parent.querySelector('.accordion-content');
+
+        parent.classList.toggle('active');
+
+        if (parent.classList.contains('active')) {
+            content.style.maxHeight = content.scrollHeight + "px";
+        } else {
+            content.style.maxHeight = "0px";
+        }
+    }
+
+    document.addEventListener("DOMContentLoaded", function() {
+        const activeAccordions = document.querySelectorAll('.accordion.active');
+        activeAccordions.forEach(acc => {
+            const content = acc.querySelector('.accordion-content');
+            if (content) {
+                content.style.maxHeight = content.scrollHeight + "px";
+            }
+        });
+
+        const form = document.getElementById('scan-form');
+        const urlInput = document.getElementById('url-input');
+        const statusBox = document.getElementById('scan-status');
+        const resultsBox = document.getElementById('results');
+
+        form.addEventListener('submit', async function(event) {
+            event.preventDefault();
+            const url = urlInput.value.trim();
+
+            if (!url) {
+                statusBox.textContent = 'Please enter a valid URL.';
+                statusBox.className = 'status-message error';
+                return;
+            }
+
+            statusBox.textContent = 'Scanning...';
+            statusBox.className = 'status-message';
+
+            try {
+                const response = await fetch('/scan', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ url })
+                });
+
+                const result = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(result.error || 'Scan failed.');
+                }
+
+                const passed = result.passed || [];
+                const issues = [...(result.weak || []), ...(result.missing || [])];
+                const recommendations = result.recommendations || [];
+
+                resultsBox.style.display = 'block';
+                resultsBox.innerHTML = `
+                    <div class="metrics-grid">
+                        <div class="metric-card">
+                            <div class="metric-title">Grade</div>
+                            <div class="metric-value ${result.grade === 'A' || result.grade === 'B' ? 'green' : result.grade === 'C' ? 'amber' : 'red'}">${result.grade}</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-title">Score</div>
+                            <div class="metric-value ${result.score >= 80 ? 'green' : result.score >= 60 ? 'amber' : 'red'}">${result.score}%</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-title">Status Code</div>
+                            <div class="metric-value">${result.status_code}</div>
+                        </div>
+                    </div>
+
+                    <h3>Passing headers</h3>
+                    ${passed.length ? passed.map(item => `
+                        <div class="header-item">
+                            <div class="header-top">
+                                <span class="header-name">${item.header}</span>
+                                <span class="badge ok">${item.status.toUpperCase()}</span>
+                            </div>
+                            <div>${item.description}</div>
+                            <div class="code-block">${item.actual_value || 'Not set'}</div>
+                        </div>
+                    `).join('') : '<p>No passing headers found.</p>'}
+
+                    <h3>Missing or weak headers</h3>
+                    ${issues.length ? issues.map(item => `
+                        <div class="header-item">
+                            <div class="header-top">
+                                <span class="header-name">${item.header}</span>
+                                <span class="badge ${item.status === 'weak' ? 'warning' : 'danger'}">${item.status.toUpperCase()}</span>
+                            </div>
+                            <div>${item.note}</div>
+                            <div class="code-block">${item.actual_value || 'Not set'}</div>
+                        </div>
+                    `).join('') : '<p>All monitored headers look good.</p>'}
+
+                    <h3>Recommendations</h3>
+                    ${recommendations.length ? recommendations.map(item => `
+                        <div class="header-item">
+                            <div class="header-top">
+                                <span class="header-name">${item.header}</span>
+                                <span class="badge warning">${item.severity.toUpperCase()}</span>
+                            </div>
+                            <div>${item.recommendation}</div>
+                        </div>
+                    `).join('') : '<p>No recommendations.</p>'}
+                `;
+
+                statusBox.textContent = `Scan complete for ${result.final_url}`;
+                statusBox.className = 'status-message success';
+            } catch (error) {
+                statusBox.textContent = error.message;
+                statusBox.className = 'status-message error';
+                resultsBox.style.display = 'none';
+            }
+        });
+    });
+</script>
+
+</body>
+</html>
